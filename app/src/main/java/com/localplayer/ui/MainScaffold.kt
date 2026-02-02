@@ -83,7 +83,8 @@ fun MainScaffold(viewModel: PlayerViewModel) {
                     uiState = uiState,
                     onPickFolder = pickFolder,
                     onRefresh = viewModel::refreshLibrary,
-                    onPlayTrack = viewModel::playTrackList
+                    onPlayTrack = viewModel::playTrackList,
+                    onRemoveFolder = viewModel::removeFolder
                 )
                 TabItem.Folders -> FolderScreen(
                     uiState = uiState,

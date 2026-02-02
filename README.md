@@ -2,9 +2,13 @@
 
 A modern Android music player app that plays local audio files from user-selected folders. Built with Kotlin, Jetpack Compose, and Media3 ExoPlayer.
 
+![Version](https://img.shields.io/badge/version-0.1-orange)
+![Status](https://img.shields.io/badge/status-Early%20Development-yellow)
 ![Android](https://img.shields.io/badge/Android-14%2B-green)
 ![Kotlin](https://img.shields.io/badge/Kotlin-1.9-blue)
 ![Compose](https://img.shields.io/badge/Jetpack%20Compose-Material3-purple)
+
+> ⚠️ **Early Development Notice:** This app is currently in v0.1 and under active development. Some features may be incomplete or missing. Contributions and feedback are welcome!
 
 ## Features
 
@@ -26,6 +30,42 @@ A modern Android music player app that plays local audio files from user-selecte
 - **Dark Theme** - Dark gray theme with subtle orange accents
 - **Now Playing Bar** - Shows current track title and artist
 - **Genre Categorization** - Auto-categorize tracks into 20 genre buckets
+
+## ⚠️ Known Limitations (v0.1)
+
+These features are **not yet implemented** or have known issues:
+
+| Feature | Status |
+|---------|--------|
+| 🔘 Playback progress/seek bar | Not implemented |
+| 🖼️ Album art display | Not implemented |
+| 📋 Playlist/queue management | Not implemented |
+| 🔍 Search functionality | Not implemented |
+| ⚙️ Settings screen | Not implemented |
+| 🎛️ Equalizer | Not implemented |
+| 🏷️ Genre detection accuracy | Limited - most tracks show as "Other" due to missing metadata |
+
+## 🚀 Roadmap / Future Improvements
+
+### Near-term Goals
+- [ ] **Playback Progress Bar** - Visual seek bar with drag-to-seek
+- [ ] **Album Art Display** - Show embedded album artwork
+- [ ] **Queue Management UI** - View and manage playback queue
+- [ ] **Search** - Search tracks by title, artist, or album
+
+### Medium-term Goals
+- [ ] **Last.fm Genre Detection** - Automatic genre tagging using Last.fm API
+  - Look up artist genres from Last.fm database
+  - Local SQLite cache for offline use
+  - Fix the "99% Other genre" problem
+- [ ] **Settings Screen** - Playback preferences, theme options
+- [ ] **Enhanced Notification Controls** - Rich media notification with album art
+
+### Long-term Goals
+- [ ] **Playlist Support** - Create and manage playlists
+- [ ] **Equalizer Integration** - Audio equalizer with presets
+- [ ] **Sleep Timer** - Auto-stop playback after set time
+- [ ] **Android Auto Support** - Car integration
 
 ## Screenshots
 
@@ -98,7 +138,20 @@ The app uses the Storage Access Framework (SAF) to access music files, so no spe
 
 ## Contributing
 
-Contributions are welcome! Please feel free to submit a Pull Request.
+Contributions are welcome! This project is in early development, so there's plenty of opportunity to help shape its direction.
+
+### How to Contribute
+1. Fork the repository
+2. Create a feature branch (`git checkout -b feature/amazing-feature`)
+3. Commit your changes (`git commit -m 'Add amazing feature'`)
+4. Push to the branch (`git push origin feature/amazing-feature`)
+5. Open a Pull Request
+
+### Areas Where Help is Needed
+- UI/UX improvements
+- Playback seek bar implementation
+- Album art extraction and display
+- Testing on various Android devices
 
 ## License
 

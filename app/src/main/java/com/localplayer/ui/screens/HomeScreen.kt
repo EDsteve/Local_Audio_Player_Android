@@ -1,5 +1,6 @@
 package com.localplayer.ui.screens
 
+import android.net.Uri
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -9,10 +10,12 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Folder
 import androidx.compose.material.icons.filled.MusicNote
 import androidx.compose.material.icons.filled.Refresh
@@ -20,6 +23,7 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -34,7 +38,8 @@ fun HomeScreen(
     uiState: PlayerUiState,
     onPickFolder: () -> Unit,
     onRefresh: () -> Unit,
-    onPlayTrack: (List<Track>, Int) -> Unit
+    onPlayTrack: (List<Track>, Int) -> Unit,
+    onRemoveFolder: (Uri) -> Unit = {}
 ) {
     LazyColumn(
         modifier = Modifier.fillMaxSize().padding(16.dp),
@@ -57,7 +62,10 @@ fun HomeScreen(
                         Text("No folders selected yet")
                     } else {
                         uiState.selectedFolders.forEach { uri ->
-                            Text(uri.lastPathSegment ?: uri.toString(), style = MaterialTheme.typography.bodySmall)
+                            FolderItem(
+                                uri = uri,
+                                onRemove = { onRemoveFolder(uri) }
+                            )
                         }
                     }
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -83,6 +91,47 @@ fun HomeScreen(
             itemsIndexed(uiState.tracks) { index, track ->
                 TrackRow(track = track, onPlay = { onPlayTrack(uiState.tracks, index) })
             }
+        }
+    }
+}
+
+@Composable
+private fun FolderItem(
+    uri: Uri,
+    onRemove: () -> Unit
+) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.SpaceBetween
+    ) {
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            modifier = Modifier.weight(1f)
+        ) {
+            Icon(
+                Icons.Default.Folder,
+                contentDescription = null,
+                modifier = Modifier.size(20.dp),
+                tint = MaterialTheme.colorScheme.primary
+            )
+            Spacer(modifier = Modifier.width(8.dp))
+            Text(
+                text = uri.lastPathSegment ?: uri.toString(),
+                style = MaterialTheme.typography.bodySmall,
+                modifier = Modifier.weight(1f)
+            )
+        }
+        IconButton(
+            onClick = onRemove,
+            modifier = Modifier.size(32.dp)
+        ) {
+            Icon(
+                Icons.Default.Close,
+                contentDescription = "Remove folder",
+                modifier = Modifier.size(18.dp),
+                tint = MaterialTheme.colorScheme.error
+            )
         }
     }
 }
