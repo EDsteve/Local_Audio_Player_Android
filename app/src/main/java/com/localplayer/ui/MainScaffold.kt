@@ -97,7 +97,8 @@ fun MainScaffold(viewModel: PlayerViewModel) {
                     uiState = uiState,
                     onPlayGenre = viewModel::playTrackList,
                     onAddToQueue = viewModel::addToQueue,
-                    onTogglePlayPause = viewModel::togglePlayPauseTrack
+                    onTogglePlayPause = viewModel::togglePlayPauseTrack,
+                    onRefreshGenres = viewModel::clearGenreCacheAndRescan
                 )
             }
         }

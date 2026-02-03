@@ -26,6 +26,7 @@ import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.MusicNote
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
@@ -50,28 +51,63 @@ import com.localplayer.model.GenreBucket
 import com.localplayer.model.Track
 import com.localplayer.ui.PlayerUiState
 
-// Genre colors for visual distinction
+// Predefined colors for known genres, plus dynamic color generation for others
 object GenreColors {
-    val Pop = Color(0xFFFF6B6B)
-    val Rock = Color(0xFF4ECDC4)
-    val Jazz = Color(0xFFFFE66D)
-    val Classical = Color(0xFFA8E6CF)
-    val Electronic = Color(0xFF95E1D3)
-    val HipHop = Color(0xFFF38181)
-    val RnB = Color(0xFFAA96DA)
-    val Metal = Color(0xFF3D5A80)
-    val Country = Color(0xFFE8A87C)
-    val Blues = Color(0xFF5AA9E6)
-    val Reggae = Color(0xFF55D6BE)
-    val Latin = Color(0xFFFC8A4D)
-    val Folk = Color(0xFF8B9A46)
-    val Soul = Color(0xFFE07BE0)
-    val Punk = Color(0xFFFF5E5B)
-    val Indie = Color(0xFFD4A5A5)
-    val Dance = Color(0xFFB388EB)
-    val World = Color(0xFF7FDBDA)
-    val Soundtrack = Color(0xFF6C5B7B)
-    val Other = Color(0xFFB8B8B8)
+    // Common genre colors for quick lookup
+    private val knownColors = mapOf(
+        "pop" to Color(0xFFFF6B6B),
+        "rock" to Color(0xFF4ECDC4),
+        "jazz" to Color(0xFFFFE66D),
+        "classical" to Color(0xFFA8E6CF),
+        "electronic" to Color(0xFF95E1D3),
+        "hip-hop" to Color(0xFFF38181),
+        "r&b" to Color(0xFFAA96DA),
+        "metal" to Color(0xFF3D5A80),
+        "country" to Color(0xFFE8A87C),
+        "blues" to Color(0xFF5AA9E6),
+        "reggae" to Color(0xFF55D6BE),
+        "latin" to Color(0xFFFC8A4D),
+        "folk" to Color(0xFF8B9A46),
+        "soul" to Color(0xFFE07BE0),
+        "punk" to Color(0xFFFF5E5B),
+        "indie" to Color(0xFFD4A5A5),
+        "dance" to Color(0xFFB388EB),
+        "world" to Color(0xFF7FDBDA),
+        "soundtrack" to Color(0xFF6C5B7B),
+        "alternative" to Color(0xFF9B5DE5),
+        "singer-songwriter" to Color(0xFFFDA085),
+        "ambient" to Color(0xFF8ECAE6),
+        "other" to Color(0xFFB8B8B8)
+    )
+    
+    // Hue palette for dynamic color generation
+    private val hues = listOf(0f, 30f, 60f, 120f, 180f, 210f, 270f, 300f, 330f)
+    
+    /**
+     * Get a color for a genre.
+     * Uses predefined colors for known genres, generates consistent colors for others.
+     */
+    fun getColor(genre: String): Color {
+        val key = genre.lowercase()
+        
+        // Check known colors first
+        knownColors[key]?.let { return it }
+        
+        // Check if genre contains a known keyword
+        for ((knownGenre, color) in knownColors) {
+            if (key.contains(knownGenre)) {
+                return color
+            }
+        }
+        
+        // Generate consistent color based on genre name hash
+        val hash = genre.hashCode()
+        val hueIndex = (hash and 0x7FFFFFFF) % hues.size
+        val saturation = 0.5f + (((hash shr 8) and 0xFF) / 512f) // 0.5-1.0
+        val lightness = 0.4f + (((hash shr 16) and 0xFF) / 512f) // 0.4-0.9
+        
+        return Color.hsl(hues[hueIndex], saturation, lightness)
+    }
 }
 
 @Composable
@@ -79,7 +115,8 @@ fun GenreScreen(
     uiState: PlayerUiState,
     onPlayGenre: (List<Track>, Int) -> Unit,
     onAddToQueue: ((List<Track>) -> Unit)? = null,
-    onTogglePlayPause: ((List<Track>, Int) -> Unit)? = null
+    onTogglePlayPause: ((List<Track>, Int) -> Unit)? = null,
+    onRefreshGenres: (() -> Unit)? = null
 ) {
     // Search query
     var searchQuery by remember { mutableStateOf("") }
@@ -150,8 +187,22 @@ fun GenreScreen(
                 }
                 Text(
                     text = selectedGenre?.name ?: "Genres",
-                    style = MaterialTheme.typography.titleLarge
+                    style = MaterialTheme.typography.titleLarge,
+                    modifier = Modifier.weight(1f)
                 )
+                
+                // Refresh genres button (only show in main genres view)
+                if (selectedGenre == null && onRefreshGenres != null) {
+                    IconButton(
+                        onClick = { onRefreshGenres() }
+                    ) {
+                        Icon(
+                            Icons.Default.Refresh,
+                            contentDescription = "Refresh genres",
+                            tint = MaterialTheme.colorScheme.primary
+                        )
+                    }
+                }
             }
         }
         
@@ -430,28 +481,8 @@ private fun TrackRow(
 
 /**
  * Returns a color associated with a genre for visual distinction.
+ * Uses dynamic color generation for any genre.
  */
 private fun getGenreColor(genre: String): Color {
-    return when (genre.lowercase()) {
-        "pop" -> GenreColors.Pop
-        "rock" -> GenreColors.Rock
-        "jazz" -> GenreColors.Jazz
-        "classical" -> GenreColors.Classical
-        "electronic" -> GenreColors.Electronic
-        "hip-hop" -> GenreColors.HipHop
-        "r&b" -> GenreColors.RnB
-        "metal" -> GenreColors.Metal
-        "country" -> GenreColors.Country
-        "blues" -> GenreColors.Blues
-        "reggae" -> GenreColors.Reggae
-        "latin" -> GenreColors.Latin
-        "folk" -> GenreColors.Folk
-        "soul" -> GenreColors.Soul
-        "punk" -> GenreColors.Punk
-        "indie" -> GenreColors.Indie
-        "dance" -> GenreColors.Dance
-        "world" -> GenreColors.World
-        "soundtrack" -> GenreColors.Soundtrack
-        else -> GenreColors.Other
-    }
+    return GenreColors.getColor(genre)
 }

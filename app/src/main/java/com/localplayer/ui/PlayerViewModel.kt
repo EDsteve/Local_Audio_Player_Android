@@ -135,6 +135,18 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
     }
     
     /**
+     * Clear genre cache and rescan library.
+     * Use this when genres are incorrectly categorized and user wants to refresh.
+     */
+    fun clearGenreCacheAndRescan() {
+        viewModelScope.launch {
+            repository.clearGenreCache()
+            trackCache.clearCache()
+            scanAndCacheLibrary()
+        }
+    }
+    
+    /**
      * Scan folders and save to cache.
      */
     private fun scanAndCacheLibrary() {

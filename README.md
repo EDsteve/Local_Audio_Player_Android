@@ -2,13 +2,13 @@
 
 A modern Android music player app that plays local audio files from user-selected folders. Built with Kotlin, Jetpack Compose, and Media3 ExoPlayer.
 
-![Version](https://img.shields.io/badge/version-0.1-orange)
+![Version](https://img.shields.io/badge/version-0.2-orange)
 ![Status](https://img.shields.io/badge/status-Early%20Development-yellow)
 ![Android](https://img.shields.io/badge/Android-14%2B-green)
 ![Kotlin](https://img.shields.io/badge/Kotlin-1.9-blue)
 ![Compose](https://img.shields.io/badge/Jetpack%20Compose-Material3-purple)
 
-> ⚠️ **Early Development Notice:** This app is currently in v0.1 and under active development. Some features may be incomplete or missing. Contributions and feedback are welcome!
+> ⚠️ **Early Development Notice:** This app is currently in v0.2 and under active development. Some features may be incomplete or missing. Contributions and feedback are welcome!
 
 ## Features
 
@@ -29,9 +29,17 @@ A modern Android music player app that plays local audio files from user-selecte
 - **Material 3 Design** - Clean, modern interface following Material guidelines
 - **Dark Theme** - Dark gray theme with subtle orange accents
 - **Now Playing Bar** - Shows current track title and artist
-- **Genre Categorization** - Auto-categorize tracks into 20 genre buckets
+- **Search Functionality** - Search tracks by title, artist, or album on all screens
 
-## ⚠️ Known Limitations (v0.1)
+### 🏷️ Enhanced Genre Detection (NEW in v0.2!)
+- **Last.fm API Integration** - Automatic genre detection using Last.fm's extensive music database
+- **Artist-based Genre Tagging** - Looks up artist genres for accurate categorization
+- **20 Genre Categories** - Tracks are organized into: Rock, Pop, Hip-Hop, Electronic, R&B, Jazz, Blues, Classical, Country, Folk, Latin, Reggae, Metal, Ambient, Soundtrack, Gospel, Children, Spoken Word, World, and Other
+- **Smart Caching** - Genre lookups are cached locally (Room database) for instant subsequent scans
+- **Offline Support** - Works offline for previously scanned artists
+- **Refresh Button** - Re-scan genres with updated mappings when needed
+
+## ⚠️ Known Limitations (v0.2)
 
 These features are **not yet implemented** or have known issues:
 
@@ -39,11 +47,10 @@ These features are **not yet implemented** or have known issues:
 |---------|--------|
 | 🔘 Playback progress/seek bar | Not implemented |
 | 🖼️ Album art display | Not implemented |
-| 📋 Playlist/queue management | Not implemented |
-| 🔍 Search functionality | Not implemented |
+| 📋 Playlist/queue management UI | Not implemented |
 | ⚙️ Settings screen | Not implemented |
 | 🎛️ Equalizer | Not implemented |
-| 🏷️ Genre detection accuracy | Limited - most tracks show as "Other" due to missing metadata |
+| 🏷️ Genre detection | ✅ Implemented via Last.fm API |
 
 ## 🚀 Roadmap / Future Improvements
 
@@ -51,15 +58,11 @@ These features are **not yet implemented** or have known issues:
 - [ ] **Playback Progress Bar** - Visual seek bar with drag-to-seek
 - [ ] **Album Art Display** - Show embedded album artwork
 - [ ] **Queue Management UI** - View and manage playback queue
-- [ ] **Search** - Search tracks by title, artist, or album
 
 ### Medium-term Goals
-- [ ] **Last.fm Genre Detection** - Automatic genre tagging using Last.fm API
-  - Look up artist genres from Last.fm database
-  - Local SQLite cache for offline use
-  - Fix the "99% Other genre" problem
 - [ ] **Settings Screen** - Playback preferences, theme options
 - [ ] **Enhanced Notification Controls** - Rich media notification with album art
+- [ ] **Toast/Snackbar Feedback** - Visual feedback for queue operations
 
 ### Long-term Goals
 - [ ] **Playlist Support** - Create and manage playlists
@@ -76,6 +79,8 @@ These features are **not yet implemented** or have known issues:
 - **Language:** Kotlin
 - **UI:** Jetpack Compose + Material 3
 - **Playback:** Media3 ExoPlayer with MediaSession
+- **Database:** Room (for genre caching)
+- **Networking:** Retrofit + OkHttp (for Last.fm API)
 - **Min SDK:** Android 14 (API 34)
 - **Architecture:** MVVM with Unidirectional Data Flow
 
@@ -85,9 +90,18 @@ These features are **not yet implemented** or have known issues:
 app/
 ├── data/
 │   ├── MusicRepository.kt      # Folder scanning and track grouping
-│   ├── GenreMapper.kt          # Genre classification
+│   ├── GenreMapper.kt          # Genre classification (120+ mappings)
+│   ├── GenreEnhancer.kt        # Last.fm API + cache orchestration
+│   ├── ArtistParser.kt         # Extract artist from filename/path
 │   ├── PreferencesManager.kt   # Persistent folder storage
-│   └── TrackCache.kt           # Track library caching
+│   ├── TrackCache.kt           # Track library caching
+│   ├── cache/
+│   │   ├── GenreDatabase.kt    # Room database
+│   │   ├── ArtistGenreCache.kt # Cache entity
+│   │   └── ArtistGenreCacheDao.kt # Cache DAO
+│   └── lastfm/
+│       ├── LastFmApi.kt        # Retrofit API interface
+│       └── LastFmModels.kt     # API response models
 ├── model/
 │   └── Models.kt               # Track, Folder, GenreBucket data classes
 ├── playback/
@@ -100,7 +114,7 @@ app/
     └── screens/
         ├── HomeScreen.kt       # Library overview
         ├── FolderScreen.kt     # Folder browser
-        ├── GenreScreen.kt      # Genre browser
+        ├── GenreScreen.kt      # Genre browser with refresh button
         └── NowPlayingBar.kt    # Playback controls
 ```
 
@@ -126,7 +140,9 @@ git clone https://github.com/EDsteve/Local_Audio_Player_Android.git
 
 ### Permissions
 
-The app uses the Storage Access Framework (SAF) to access music files, so no special storage permissions are required beyond folder selection.
+The app uses:
+- **Storage Access Framework (SAF)** - For accessing music files (no storage permissions needed)
+- **Internet** - For Last.fm API genre lookups (optional, works offline with cache)
 
 ## Usage
 
@@ -134,7 +150,16 @@ The app uses the Storage Access Framework (SAF) to access music files, so no spe
 2. **Browse:** Use the bottom navigation to switch between Home, Folders, and Genres
 3. **Play:** Tap any track to play, or tap the play button on a folder to play all tracks
 4. **Navigate:** Tap a folder name to browse its contents, tap back to return
-5. **Refresh:** Use the refresh button to scan for new files
+5. **Search:** Use the search bar on any screen to find tracks
+6. **Refresh Genres:** Tap the refresh button (🔄) in the Genres screen to re-scan with updated mappings
+
+### Genre Detection
+
+The app automatically detects genres using the Last.fm API:
+- On first scan, each unique artist is looked up on Last.fm
+- The returned tags are mapped to one of 20 genre categories
+- Results are cached locally for instant subsequent scans
+- If genres seem incorrect, use the refresh button to re-scan
 
 ## Contributing
 
@@ -162,3 +187,5 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 - [Media3 ExoPlayer](https://developer.android.com/media/media3/exoplayer) for audio playback
 - [Jetpack Compose](https://developer.android.com/jetpack/compose) for modern UI
 - [Material Design 3](https://m3.material.io/) for design guidelines
+- [Last.fm API](https://www.last.fm/api) for genre/tag data
+- [Room Database](https://developer.android.com/training/data-storage/room) for local caching
