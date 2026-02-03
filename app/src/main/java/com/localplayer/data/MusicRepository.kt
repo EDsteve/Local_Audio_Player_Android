@@ -18,7 +18,9 @@ class MusicRepository(private val context: Context) {
         val tracks = mutableListOf<Track>()
         folderUris.forEach { treeUri ->
             val rootDocId = DocumentsContract.getTreeDocumentId(treeUri)
-            scanFolder(resolver, treeUri, rootDocId, tracks)
+            val rootName = rootDocId.substringAfterLast("/").substringAfterLast(":")
+            // Start scanning from root with empty relative path (tracks in root have "" path)
+            scanFolder(resolver, treeUri, rootDocId, tracks, "")
         }
         tracks
     }
@@ -27,7 +29,8 @@ class MusicRepository(private val context: Context) {
         resolver: ContentResolver,
         treeUri: Uri,
         parentDocId: String,
-        tracks: MutableList<Track>
+        tracks: MutableList<Track>,
+        currentRelativePath: String
     ) {
         val childrenUri = DocumentsContract.buildChildDocumentsUriUsingTree(treeUri, parentDocId)
         resolver.query(
@@ -50,10 +53,12 @@ class MusicRepository(private val context: Context) {
                 val mime = cursor.getString(mimeIndex)
                 val docUri = DocumentsContract.buildDocumentUriUsingTree(treeUri, docId)
                 if (DocumentsContract.Document.MIME_TYPE_DIR == mime) {
-                    scanFolder(resolver, treeUri, docId, tracks)
+                    // Build the new relative path for this subfolder
+                    val newRelativePath = if (currentRelativePath.isEmpty()) name else "$currentRelativePath/$name"
+                    scanFolder(resolver, treeUri, docId, tracks, newRelativePath)
                 } else if (mime.startsWith("audio")) {
-                    val folderName = parentDocId.substringAfterLast("/")
-                    tracks.add(extractTrack(docUri, name, folderName, resolver))
+                    // Use the current relative path for the track's folder
+                    tracks.add(extractTrack(docUri, name, currentRelativePath, resolver))
                 }
             }
         }
@@ -83,6 +88,25 @@ class MusicRepository(private val context: Context) {
             contentUri = uri,
             folderPath = folderName,
             genre = genre
+        )
+    }
+
+    /**
+     * Creates a single root folder containing all content.
+     * Returns a Folder with subfolders and tracks at root level.
+     */
+    fun createRootFolder(tracks: List<Track>): Folder? {
+        if (tracks.isEmpty()) return null
+        
+        val tree = buildFolderTree(tracks)
+        
+        // Create a virtual root folder that contains all the subfolders
+        // and any tracks that are at the "root" level (tracks not in nested folders)
+        return Folder(
+            path = "root",
+            name = "Music",
+            tracks = emptyList(), // root level tracks will be in the first folder level
+            subfolders = tree
         )
     }
 

@@ -21,6 +21,7 @@ data class PlayerUiState(
     val isLoading: Boolean = false,
     val tracks: List<Track> = emptyList(),
     val folders: List<Folder> = emptyList(),
+    val rootFolder: Folder? = null, // Single root folder with subfolders + tracks
     val genres: List<GenreBucket> = emptyList(),
     val selectedFolders: List<Uri> = emptyList(),
     val nowPlaying: Track? = null,
@@ -160,6 +161,42 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
             playingQueue = tracks,
             isPlaying = true
         )
+    }
+
+    /**
+     * Add tracks to the end of the current queue without disrupting playback
+     */
+    fun addToQueue(tracks: List<Track>) {
+        if (tracks.isEmpty()) return
+        
+        // If nothing is playing, start playing the first track
+        if (_uiState.value.nowPlaying == null) {
+            playTrackList(tracks, 0)
+        } else {
+            // Add to existing queue
+            playbackManager.addToQueue(tracks)
+            _uiState.value = _uiState.value.copy(
+                playingQueue = _uiState.value.playingQueue + tracks
+            )
+        }
+    }
+
+    /**
+     * Toggle play/pause for a specific track.
+     * If the track is current, toggle play/pause.
+     * If the track is different, play it.
+     */
+    fun togglePlayPauseTrack(tracks: List<Track>, trackIndex: Int) {
+        val track = tracks.getOrNull(trackIndex) ?: return
+        val currentTrack = _uiState.value.nowPlaying
+        
+        if (currentTrack?.id == track.id) {
+            // Same track - toggle play/pause
+            playPause()
+        } else {
+            // Different track - play it
+            playTrackList(tracks, trackIndex)
+        }
     }
 
     fun playPause() {

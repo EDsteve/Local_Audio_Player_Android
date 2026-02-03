@@ -84,15 +84,20 @@ fun MainScaffold(viewModel: PlayerViewModel) {
                     onPickFolder = pickFolder,
                     onRefresh = viewModel::refreshLibrary,
                     onPlayTrack = viewModel::playTrackList,
-                    onRemoveFolder = viewModel::removeFolder
+                    onRemoveFolder = viewModel::removeFolder,
+                    onTogglePlayPause = viewModel::togglePlayPauseTrack
                 )
                 TabItem.Folders -> FolderScreen(
                     uiState = uiState,
-                    onPlayFolder = viewModel::playTrackList
+                    onPlayFolder = viewModel::playTrackList,
+                    onAddToQueue = viewModel::addToQueue,
+                    onTogglePlayPause = viewModel::togglePlayPauseTrack
                 )
                 TabItem.Genres -> GenreScreen(
                     uiState = uiState,
-                    onPlayGenre = viewModel::playTrackList
+                    onPlayGenre = viewModel::playTrackList,
+                    onAddToQueue = viewModel::addToQueue,
+                    onTogglePlayPause = viewModel::togglePlayPauseTrack
                 )
             }
         }

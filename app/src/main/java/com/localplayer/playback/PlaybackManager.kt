@@ -79,4 +79,27 @@ class PlaybackManager(private val context: Context) {
     fun previous() {
         controller?.seekToPrevious()
     }
+
+    /**
+     * Add tracks to the end of the current queue without disrupting playback
+     */
+    fun addToQueue(tracks: List<Track>) {
+        val items = tracks.map { track ->
+            MediaItem.Builder()
+                .setUri(track.contentUri)
+                .setMediaId(track.id)
+                .setTag(track)
+                .build()
+        }
+        items.forEach { item ->
+            controller?.addMediaItem(item)
+        }
+    }
+
+    /**
+     * Get the current queue size
+     */
+    fun getQueueSize(): Int {
+        return controller?.mediaItemCount ?: 0
+    }
 }
