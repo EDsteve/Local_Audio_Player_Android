@@ -35,7 +35,16 @@ data class Folder(
     }
 }
 
+/**
+ * A genre and everything in it.
+ *
+ * @param tracks every track in this genre, including those in [subgenres]
+ * @param subgenres more specific genres filed under this one (empty for a sub-genre)
+ * @param directTracks tracks tagged with this genre itself, not with a sub-genre
+ */
 data class GenreBucket(
     val name: String,
-    val tracks: List<Track>
+    val tracks: List<Track>,
+    val subgenres: List<GenreBucket> = emptyList(),
+    val directTracks: List<Track> = tracks
 )

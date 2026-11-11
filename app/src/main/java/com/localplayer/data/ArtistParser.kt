@@ -1,5 +1,7 @@
 package com.localplayer.data
 
+import java.text.Normalizer
+
 /**
  * Utility for extracting artist names from filenames and metadata.
  * Uses common naming patterns to parse artist when metadata is missing.
@@ -89,6 +91,23 @@ object ArtistParser {
             .replace("&", "and")
     }
     
+    /**
+     * True if two names are the same artist written differently:
+     * "Seals and Crofts" / "Seals & Crofts", "Sergio Mendes" / "Sérgio Mendes",
+     * "The Chocolate Watchband" / "Chocolate Watch Band".
+     * Different letters ("Tony Ann" / "Tony An") mean a different artist.
+     */
+    fun isSameArtist(a: String, b: String): Boolean = comparisonKey(a) == comparisonKey(b)
+
+    /** Letters and digits only: no case, accents, spaces, punctuation or leading "the". */
+    private fun comparisonKey(name: String): String {
+        return Normalizer.normalize(name.lowercase(), Normalizer.Form.NFD)
+            .replace(Regex("\\p{M}+"), "")
+            .replace("&", "and")
+            .replace(Regex("[^\\p{L}\\p{N}]"), "")
+            .removePrefix("the")
+    }
+
     /**
      * Clean artist name from filename artifacts.
      */

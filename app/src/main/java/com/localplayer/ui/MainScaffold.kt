@@ -42,10 +42,14 @@ fun MainScaffold(viewModel: PlayerViewModel) {
             Column {
                 uiState.nowPlaying?.let { track ->
                     NowPlayingBar(
+                        trackId = track.id,
                         title = track.title,
                         artist = track.artist,
                         isPlaying = uiState.isPlaying,
                         isShuffleEnabled = uiState.isShuffleEnabled,
+                        getPositionMs = viewModel::playbackPositionMs,
+                        getDurationMs = viewModel::playbackDurationMs,
+                        onSeek = viewModel::seekTo,
                         onShuffleToggle = viewModel::toggleShuffle,
                         onPrevious = viewModel::previous,
                         onPlayPause = viewModel::playPause,
@@ -91,14 +95,18 @@ fun MainScaffold(viewModel: PlayerViewModel) {
                     uiState = uiState,
                     onPlayFolder = viewModel::playTrackList,
                     onAddToQueue = viewModel::addToQueue,
-                    onTogglePlayPause = viewModel::togglePlayPauseTrack
+                    onTogglePlayPause = viewModel::togglePlayPauseTrack,
+                    onSetGenre = viewModel::setGenre,
+                    onResetGenre = viewModel::resetGenre
                 )
                 TabItem.Genres -> GenreScreen(
                     uiState = uiState,
                     onPlayGenre = viewModel::playTrackList,
                     onAddToQueue = viewModel::addToQueue,
                     onTogglePlayPause = viewModel::togglePlayPauseTrack,
-                    onRefreshGenres = viewModel::clearGenreCacheAndRescan
+                    onRefreshGenres = viewModel::refreshGenres,
+                    onSetGenre = viewModel::setGenre,
+                    onResetGenre = viewModel::resetGenre
                 )
             }
         }

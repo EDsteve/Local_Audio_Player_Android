@@ -55,7 +55,9 @@ fun FolderScreen(
     uiState: PlayerUiState,
     onPlayFolder: (List<Track>, Int) -> Unit,
     onAddToQueue: (List<Track>) -> Unit,
-    onTogglePlayPause: (List<Track>, Int) -> Unit
+    onTogglePlayPause: (List<Track>, Int) -> Unit,
+    onSetGenre: (Track, String, Boolean) -> Unit = { _, _, _ -> },
+    onResetGenre: (Track) -> Unit = {}
 ) {
     // Search query
     var searchQuery by remember { mutableStateOf("") }
@@ -66,6 +68,18 @@ fun FolderScreen(
     // Handle back button
     BackHandler(enabled = navigationStack.isNotEmpty()) {
         navigationStack = navigationStack.dropLast(1)
+    }
+
+    // Track whose genre is being set by hand, if the dialog is open
+    var genreDialogTrack by remember { mutableStateOf<Track?>(null) }
+    genreDialogTrack?.let { track ->
+        SetGenreDialog(
+            track = track,
+            uiState = uiState,
+            onSetGenre = onSetGenre,
+            onResetGenre = onResetGenre,
+            onDismiss = { genreDialogTrack = null }
+        )
     }
 
     // Current folder being viewed (null = root level)
@@ -172,7 +186,7 @@ fun FolderScreen(
         if (searchQuery.isNotBlank()) {
             item {
                 Text(
-                    "${displayTracks.size} tracks found",
+                    "${countLabel(displayTracks.size, "track")} found",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
@@ -207,7 +221,8 @@ fun FolderScreen(
                 isPlaying = uiState.nowPlaying?.id == track.id && uiState.isPlaying,
                 isCurrentTrack = uiState.nowPlaying?.id == track.id,
                 onClick = { onTogglePlayPause(displayTracks, index) },
-                onAddToQueue = { onAddToQueue(listOf(track)) }
+                onAddToQueue = { onAddToQueue(listOf(track)) },
+                onSetGenre = { genreDialogTrack = track }
             )
         }
         
@@ -283,7 +298,7 @@ private fun FolderRow(
                 overflow = TextOverflow.Ellipsis
             )
             Text(
-                "${folder.totalTrackCount()} tracks",
+                countLabel(folder.totalTrackCount(), "track"),
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
@@ -336,7 +351,8 @@ private fun TrackRow(
     isPlaying: Boolean,
     isCurrentTrack: Boolean,
     onClick: () -> Unit,
-    onAddToQueue: () -> Unit
+    onAddToQueue: () -> Unit,
+    onSetGenre: () -> Unit
 ) {
     var showMenu by remember { mutableStateOf(false) }
     
@@ -412,6 +428,13 @@ private fun TrackRow(
                     text = { Text("Add to Queue") },
                     onClick = {
                         onAddToQueue()
+                        showMenu = false
+                    }
+                )
+                DropdownMenuItem(
+                    text = { Text("Set genre...") },
+                    onClick = {
+                        onSetGenre()
                         showMenu = false
                     }
                 )

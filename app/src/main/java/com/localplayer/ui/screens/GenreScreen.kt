@@ -116,17 +116,37 @@ fun GenreScreen(
     onPlayGenre: (List<Track>, Int) -> Unit,
     onAddToQueue: ((List<Track>) -> Unit)? = null,
     onTogglePlayPause: ((List<Track>, Int) -> Unit)? = null,
-    onRefreshGenres: (() -> Unit)? = null
+    onRefreshGenres: (() -> Unit)? = null,
+    onSetGenre: (Track, String, Boolean) -> Unit = { _, _, _ -> },
+    onResetGenre: (Track) -> Unit = {}
 ) {
     // Search query
     var searchQuery by remember { mutableStateOf("") }
     
-    // Selected genre for detailed view
-    var selectedGenre by remember { mutableStateOf<GenreBucket?>(null) }
+    // Where we are in the genre tree: empty = all genres, [top genre],
+    // or [top genre, sub-genre]. Names are kept instead of the buckets so the
+    // view stays valid when the library is rescanned.
+    var selectedPath by remember { mutableStateOf(emptyList<String>()) }
+    val selectedTop = uiState.genres.firstOrNull { it.name == selectedPath.getOrNull(0) }
+    val selectedGenre: GenreBucket? = selectedPath.getOrNull(1)
+        ?.let { name -> selectedTop?.subgenres?.firstOrNull { it.name == name } }
+        ?: selectedTop
     
-    // Handle back button
+    // Track whose genre is being set by hand, if the dialog is open
+    var genreDialogTrack by remember { mutableStateOf<Track?>(null) }
+    genreDialogTrack?.let { track ->
+        SetGenreDialog(
+            track = track,
+            uiState = uiState,
+            onSetGenre = onSetGenre,
+            onResetGenre = onResetGenre,
+            onDismiss = { genreDialogTrack = null }
+        )
+    }
+
+    // Handle back button: one level up
     BackHandler(enabled = selectedGenre != null) {
-        selectedGenre = null
+        selectedPath = selectedPath.dropLast(1)
     }
 
     // Filter based on search
@@ -180,7 +200,7 @@ fun GenreScreen(
             ) {
                 if (selectedGenre != null) {
                     IconButton(
-                        onClick = { selectedGenre = null }
+                        onClick = { selectedPath = selectedPath.dropLast(1) }
                     ) {
                         Icon(Icons.Default.ArrowBack, contentDescription = "Back")
                     }
@@ -188,8 +208,23 @@ fun GenreScreen(
                 Text(
                     text = selectedGenre?.name ?: "Genres",
                     style = MaterialTheme.typography.titleLarge,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
                     modifier = Modifier.weight(1f)
                 )
+                
+                // Play everything in the open genre, sub-genres included
+                if (selectedGenre != null && selectedGenre.tracks.isNotEmpty()) {
+                    IconButton(
+                        onClick = { onPlayGenre(selectedGenre.tracks, 0) }
+                    ) {
+                        Icon(
+                            Icons.Default.PlayArrow,
+                            contentDescription = "Play all in ${selectedGenre.name}",
+                            tint = MaterialTheme.colorScheme.primary
+                        )
+                    }
+                }
                 
                 // Refresh genres button (only show in main genres view)
                 if (selectedGenre == null && onRefreshGenres != null) {
@@ -230,7 +265,7 @@ fun GenreScreen(
         if (searchQuery.isNotBlank()) {
             item {
                 Text(
-                    "${filteredTracks.size} tracks found",
+                    "${countLabel(filteredTracks.size, "track")} found",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
@@ -247,24 +282,48 @@ fun GenreScreen(
                             onPlayGenre(filteredTracks, index)
                         }
                     },
-                    onAddToQueue = { onAddToQueue?.invoke(listOf(track)) }
+                    onAddToQueue = { onAddToQueue?.invoke(listOf(track)) },
+                    onSetGenre = { genreDialogTrack = track }
                 )
             }
         } else if (selectedGenre != null) {
-            // Show tracks for selected genre
-            itemsIndexed(selectedGenre!!.tracks) { index, track ->
+            // Sub-genres first, like subfolders
+            items(selectedGenre.subgenres) { subgenre ->
+                GenreRow(
+                    genre = subgenre,
+                    color = getGenreColor(selectedGenre.name),
+                    onPlayGenre = { onPlayGenre(subgenre.tracks, 0) },
+                    onAddToQueue = { onAddToQueue?.invoke(subgenre.tracks) },
+                    onOpenGenre = { selectedPath = listOf(selectedGenre.name, subgenre.name) }
+                )
+            }
+            
+            // Then the tracks tagged with this genre itself
+            val directTracks = selectedGenre.directTracks
+            if (selectedGenre.subgenres.isNotEmpty() && directTracks.isNotEmpty()) {
+                item {
+                    Text(
+                        "Tagged just \"${selectedGenre.name}\"",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(top = 12.dp, start = 4.dp)
+                    )
+                }
+            }
+            itemsIndexed(directTracks) { index, track ->
                 TrackRow(
                     track = track,
                     isPlaying = uiState.nowPlaying?.id == track.id && uiState.isPlaying,
                     isCurrentTrack = uiState.nowPlaying?.id == track.id,
                     onClick = {
                         if (onTogglePlayPause != null) {
-                            onTogglePlayPause(selectedGenre!!.tracks, index)
+                            onTogglePlayPause(directTracks, index)
                         } else {
-                            onPlayGenre(selectedGenre!!.tracks, index)
+                            onPlayGenre(directTracks, index)
                         }
                     },
-                    onAddToQueue = { onAddToQueue?.invoke(listOf(track)) }
+                    onAddToQueue = { onAddToQueue?.invoke(listOf(track)) },
+                    onSetGenre = { genreDialogTrack = track }
                 )
             }
         } else {
@@ -274,7 +333,7 @@ fun GenreScreen(
                     genre = genre,
                     onPlayGenre = { onPlayGenre(genre.tracks, 0) },
                     onAddToQueue = { onAddToQueue?.invoke(genre.tracks) },
-                    onOpenGenre = { selectedGenre = genre }
+                    onOpenGenre = { selectedPath = listOf(genre.name) }
                 )
             }
             
@@ -321,10 +380,11 @@ private fun GenreRow(
     genre: GenreBucket,
     onPlayGenre: () -> Unit,
     onAddToQueue: () -> Unit,
-    onOpenGenre: () -> Unit
+    onOpenGenre: () -> Unit,
+    color: Color = getGenreColor(genre.name) // sub-genres use their top genre's color
 ) {
     var showMenu by remember { mutableStateOf(false) }
-    val genreColor = getGenreColor(genre.name)
+    val genreColor = color
     
     Row(
         modifier = Modifier
@@ -360,7 +420,11 @@ private fun GenreRow(
                 overflow = TextOverflow.Ellipsis
             )
             Text(
-                "${genre.tracks.size} tracks",
+                if (genre.subgenres.isEmpty()) {
+                    countLabel(genre.tracks.size, "track")
+                } else {
+                    "${countLabel(genre.tracks.size, "track")} · ${countLabel(genre.subgenres.size, "sub-genre")}"
+                },
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
@@ -395,7 +459,8 @@ private fun TrackRow(
     isPlaying: Boolean,
     isCurrentTrack: Boolean,
     onClick: () -> Unit,
-    onAddToQueue: () -> Unit
+    onAddToQueue: () -> Unit,
+    onSetGenre: () -> Unit
 ) {
     var showMenu by remember { mutableStateOf(false) }
     
@@ -471,6 +536,13 @@ private fun TrackRow(
                     text = { Text("Add to Queue") },
                     onClick = {
                         onAddToQueue()
+                        showMenu = false
+                    }
+                )
+                DropdownMenuItem(
+                    text = { Text("Set genre...") },
+                    onClick = {
+                        onSetGenre()
                         showMenu = false
                     }
                 )

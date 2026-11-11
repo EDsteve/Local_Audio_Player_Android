@@ -144,8 +144,9 @@ class MusicRepository(private val context: Context) {
         // Use metadata title or filename (without extension)
         val title = metadataTitle ?: name.substringBeforeLast(".")
         
-        // Initial genre from metadata (will be enhanced later)
-        val genre = GenreMapper.mapToTopGenre(genreRaw)
+        // Initial genre from metadata (will be enhanced later).
+        // Keeps the specific genre ("Indie Rock"); it is filed under its top genre when grouping.
+        val genre = GenreMapper.specificGenre(genreRaw)
         
         return Track(
             id = uri.toString(),
@@ -258,27 +259,50 @@ class MusicRepository(private val context: Context) {
     }
 
     /**
-     * Group tracks by genre dynamically.
-     * Creates buckets from whatever genres exist in the library.
+     * Group tracks into a two-level genre tree: top genres ("Rock") that each
+     * hold their sub-genres ("Alternative Rock", "Indie Rock").
+     * A top genre's tracks include everything in its sub-genres.
      */
     fun groupByGenre(tracks: List<Track>): List<GenreBucket> {
-        // Group tracks by their genre
-        val genreMap = mutableMapOf<String, MutableList<Track>>()
-        
+        // top genre -> (specific genre -> tracks)
+        val byTopGenre = mutableMapOf<String, MutableMap<String, MutableList<Track>>>()
+
         tracks.forEach { track ->
-            val genre = track.genre.ifBlank { "Other" }
-            genreMap.getOrPut(genre) { mutableListOf() }.add(track)
+            val top = GenreMapper.parentOf(track.genre)
+            val specific = GenreMapper.displayName(track.genre)
+            byTopGenre.getOrPut(top) { mutableMapOf() }
+                .getOrPut(specific) { mutableListOf() }
+                .add(track)
         }
-        
-        // Convert to GenreBucket list, sorted alphabetically but with "Other" at the end
-        return genreMap.map { (name, trackList) ->
-            GenreBucket(name = name, tracks = trackList)
+
+        return byTopGenre.map { (top, bySpecific) ->
+            // Tracks tagged with the top genre itself sit directly in it
+            val direct = bySpecific[top].orEmpty()
+            val subgenres = bySpecific
+                .filterKeys { it != top }
+                .map { (name, trackList) -> GenreBucket(name = name, tracks = trackList) }
+                .sortedBy { it.name.lowercase() }
+            GenreBucket(
+                name = top,
+                tracks = direct + subgenres.flatMap { it.tracks },
+                subgenres = subgenres,
+                directTracks = direct
+            )
         }.sortedWith(compareBy(
-            { it.name == "Other" }, // "Other" goes last
+            { it.name == GenreMapper.OTHER }, // "Other" goes last
             { it.name.lowercase() } // Otherwise alphabetical
         ))
     }
     
+    /**
+     * Forget artists that were saved without a genre, so the next scan
+     * asks Last.fm for them again. Artists with a genre are kept.
+     */
+    suspend fun forgetMissingGenres() {
+        genreEnhancer.forgetUnknownArtists()
+        Log.d(TAG, "Artists without a genre will be looked up again")
+    }
+
     /**
      * Clear the artist-genre cache.
      * Use this to force re-fetching genres from Last.fm API on next scan.

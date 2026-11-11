@@ -29,11 +29,32 @@ class GenreEnhancer(private val context: Context) {
     companion object {
         private const val TAG = "GenreEnhancer"
         
-        // Rate limiting: Last.fm allows ~5 requests/second
-        private const val API_CALL_DELAY_MS = 200L
+        // Rate limiting: Last.fm allows ~5 requests/second; stay well under it
+        private const val API_CALL_DELAY_MS = 300L
         
         // Cache "unknown" results to avoid repeated API calls
         private const val UNKNOWN_MARKER = "_UNKNOWN_"
+
+        // Last.fm error code for "artist not found"
+        private const val ERROR_ARTIST_NOT_FOUND = 6
+
+        // A failed call is retried after these waits before the artist is given up on
+        private val RETRY_WAITS_MS = longArrayOf(3_000L, 10_000L)
+
+        // After this many artists failed in a row even with retries, the network or
+        // Last.fm is down: stop calling for a while instead of waiting on every artist
+        private const val MAX_FAILURES_IN_A_ROW = 3
+        private const val PAUSE_AFTER_FAILURES_MS = 60_000L
+    }
+
+    /** Outcome of one Last.fm lookup. */
+    private sealed interface Lookup {
+        /** Last.fm returned tags and a genre was picked. */
+        data class Found(val genre: String) : Lookup
+        /** Last.fm answered, but does not know the artist or has no tags for it. */
+        object NoGenre : Lookup
+        /** The call itself failed (network, rate limit, server error). Worth retrying later. */
+        object Failed : Lookup
     }
     
     private val cacheDao: ArtistGenreCacheDao = GenreDatabase.getInstance(context).artistGenreCacheDao()
@@ -48,6 +69,10 @@ class GenreEnhancer(private val context: Context) {
     
     // Track if we've logged the offline state (to avoid spam)
     private var hasLoggedOffline = false
+
+    // Artists that failed in a row, and until when calls are paused because of them
+    private var failuresInARow = 0
+    private var pausedUntil = 0L
     
     /**
      * Check if network is available.
@@ -75,20 +100,27 @@ class GenreEnhancer(private val context: Context) {
     suspend fun getGenreForArtist(artist: String, metadataGenre: String?): String = withContext(Dispatchers.IO) {
         // Skip for unknown artists
         if (artist.isBlank() || artist.lowercase() == "unknown") {
-            return@withContext GenreMapper.mapToTopGenre(metadataGenre)
+            return@withContext GenreMapper.specificGenre(metadataGenre)
         }
         
         val normalizedArtist = ArtistParser.normalizeArtistName(artist)
         
         // Check cache first (instant)
-        val cachedGenre = cacheDao.getGenreForArtist(normalizedArtist)
-        if (cachedGenre != null) {
+        val cached = cacheDao.getCacheEntry(normalizedArtist)
+        if (cached != null) {
             // If we cached an "unknown" result, fall back to metadata genre
-            if (cachedGenre == UNKNOWN_MARKER) {
-                return@withContext GenreMapper.mapToTopGenre(metadataGenre)
+            if (cached.genre == UNKNOWN_MARKER) {
+                return@withContext GenreMapper.specificGenre(metadataGenre)
             }
             hasLoggedOffline = false // Reset offline flag when using cache
-            return@withContext cachedGenre
+            // Pick again from the saved Last.fm tags, so a rescan applies the
+            // current genre tree without another API call
+            val savedTags = cached.rawTags?.split(", ")?.filter { it.isNotBlank() }
+            return@withContext if (savedTags.isNullOrEmpty()) {
+                GenreMapper.displayName(cached.genre)
+            } else {
+                pickGenre(savedTags)
+            }
         }
         
         // Check network before attempting API call
@@ -98,73 +130,118 @@ class GenreEnhancer(private val context: Context) {
                 hasLoggedOffline = true
             }
             // Don't cache - will retry when online
-            return@withContext GenreMapper.mapToTopGenre(metadataGenre)
+            return@withContext GenreMapper.specificGenre(metadataGenre)
         }
         
         hasLoggedOffline = false // Reset offline flag when online
         
         // Not in cache and online - try API
-        val apiGenre = fetchGenreFromApi(normalizedArtist, artist)
-        if (apiGenre != null) {
-            return@withContext apiGenre
+        when (val lookup = fetchGenreFromApi(normalizedArtist, artist)) {
+            is Lookup.Found -> return@withContext lookup.genre
+            // Last.fm has nothing for this artist: remember that, so we don't ask again
+            Lookup.NoGenre -> cacheUnknownArtist(normalizedArtist)
+            // The call failed: don't save anything, so the next scan tries again
+            Lookup.Failed -> Unit
         }
-        
-        // API failed or artist not found - use metadata genre and cache the failure
-        val fallbackGenre = GenreMapper.mapToTopGenre(metadataGenre)
-        cacheUnknownArtist(normalizedArtist)
-        
-        return@withContext fallbackGenre
+
+        return@withContext GenreMapper.specificGenre(metadataGenre)
     }
     
     /**
-     * Fetch genre from Last.fm API and cache the result.
+     * Look up an artist on Last.fm, retrying when the call itself fails.
+     * A found genre is saved in the cache.
      */
-    private suspend fun fetchGenreFromApi(normalizedArtist: String, originalArtist: String): String? {
+    private suspend fun fetchGenreFromApi(normalizedArtist: String, originalArtist: String): Lookup {
         return apiMutex.withLock {
-            try {
-                // Rate limiting
-                val timeSinceLastCall = System.currentTimeMillis() - lastApiCallTime
-                if (timeSinceLastCall < API_CALL_DELAY_MS) {
-                    delay(API_CALL_DELAY_MS - timeSinceLastCall)
-                }
-                
-                Log.d(TAG, "Fetching genre from Last.fm for: $originalArtist")
-                
-                val response = lastFmApi.getArtistInfo(artist = originalArtist)
-                lastApiCallTime = System.currentTimeMillis()
-                
-                if (response.isSuccessful) {
-                    val artistInfo = response.body()?.artist
-                    val tags = artistInfo?.tags?.tag?.mapNotNull { it.name } ?: emptyList()
-                    
-                    if (tags.isNotEmpty()) {
-                        // Get first valid genre tag from Last.fm
-                        val genre = getFirstValidGenre(tags)
-                        
-                        // Cache the result
-                        cacheDao.insertArtistGenre(
-                            ArtistGenreCache(
-                                artistName = normalizedArtist,
-                                genre = genre,
-                                rawTags = tags.joinToString(", "),
-                                lastUpdated = System.currentTimeMillis()
-                            )
-                        )
-                        
-                        Log.d(TAG, "Cached genre '$genre' for artist '$originalArtist' (tags: ${tags.take(3).joinToString()})")
-                        return@withLock genre
-                    }
-                } else {
-                    Log.w(TAG, "Last.fm API error: ${response.code()} - ${response.message()}")
-                }
-            } catch (e: Exception) {
-                Log.e(TAG, "Error fetching genre from Last.fm: ${e.message}")
+            if (System.currentTimeMillis() < pausedUntil) {
+                return@withLock Lookup.Failed
             }
-            
-            null
+
+            var lookup = callLastFm(normalizedArtist, originalArtist)
+            // A failed call is usually a rate limit or a short network drop: wait and try again
+            for (waitMs in RETRY_WAITS_MS) {
+                if (lookup != Lookup.Failed) break
+                Log.w(TAG, "Lookup failed for '$originalArtist', trying again in ${waitMs / 1000}s")
+                delay(waitMs)
+                lookup = callLastFm(normalizedArtist, originalArtist)
+            }
+
+            if (lookup == Lookup.Failed) {
+                failuresInARow++
+                if (failuresInARow >= MAX_FAILURES_IN_A_ROW) {
+                    Log.w(TAG, "$failuresInARow artists failed in a row, pausing lookups for ${PAUSE_AFTER_FAILURES_MS / 1000}s")
+                    pausedUntil = System.currentTimeMillis() + PAUSE_AFTER_FAILURES_MS
+                    failuresInARow = 0
+                }
+            } else {
+                failuresInARow = 0
+            }
+
+            lookup
         }
     }
-    
+
+    /**
+     * One call to Last.fm for an artist.
+     */
+    private suspend fun callLastFm(normalizedArtist: String, originalArtist: String): Lookup {
+        return try {
+            // Rate limiting
+            val timeSinceLastCall = System.currentTimeMillis() - lastApiCallTime
+            if (timeSinceLastCall < API_CALL_DELAY_MS) {
+                delay(API_CALL_DELAY_MS - timeSinceLastCall)
+            }
+
+            Log.d(TAG, "Fetching genre from Last.fm for: $originalArtist")
+
+            val response = lastFmApi.getArtistInfo(artist = originalArtist)
+            lastApiCallTime = System.currentTimeMillis()
+
+            val body = response.body()
+            if (!response.isSuccessful || body == null) {
+                Log.w(TAG, "Last.fm API error: ${response.code()} - ${response.message()}")
+                return Lookup.Failed
+            }
+            if (body.error != null) {
+                // Last.fm reports errors (unknown artist, rate limit, ...) in an HTTP 200 body
+                Log.w(TAG, "Last.fm error ${body.error} for '$originalArtist': ${body.message}")
+                return if (body.error == ERROR_ARTIST_NOT_FOUND) Lookup.NoGenre else Lookup.Failed
+            }
+
+            // Last.fm corrects spellings ("Seals and Crofts" -> "Seals & Crofts"), which is
+            // what we want, but it can also jump to a different artist ("Tony Ann" -> "Tony An")
+            val returnedName = body.artist?.name
+            if (returnedName != null && !ArtistParser.isSameArtist(originalArtist, returnedName)) {
+                Log.d(TAG, "Ignoring Last.fm match '$returnedName' for '$originalArtist': different artist")
+                return Lookup.NoGenre
+            }
+
+            val tags = body.artist?.tags?.tag?.mapNotNull { it.name } ?: emptyList()
+            if (tags.isEmpty()) {
+                return Lookup.NoGenre
+            }
+
+            // Pick the genre from the Last.fm tags
+            val genre = pickGenre(tags)
+
+            // Cache the result
+            cacheDao.insertArtistGenre(
+                ArtistGenreCache(
+                    artistName = normalizedArtist,
+                    genre = genre,
+                    rawTags = tags.joinToString(", "),
+                    lastUpdated = System.currentTimeMillis()
+                )
+            )
+
+            Log.d(TAG, "Cached genre '$genre' for artist '$originalArtist' (tags: ${tags.take(3).joinToString()})")
+            Lookup.Found(genre)
+        } catch (e: Exception) {
+            Log.e(TAG, "Error fetching genre from Last.fm: ${e.message}")
+            Lookup.Failed
+        }
+    }
+
     // Tags to ignore - nationalities, decades, genders, and other non-genre descriptors
     private val ignoredTags = setOf(
         // Nationalities
@@ -185,57 +262,23 @@ class GenreEnhancer(private val context: Context) {
     )
     
     /**
-     * Get the first valid genre tag from Last.fm.
-     * Returns the tag directly (capitalized) without mapping to predefined genres.
+     * Pick a genre from an artist's Last.fm tags (most used first).
+     * Prefers the first tag that belongs to the genre tree, so "indie rock"
+     * wins over an earlier "seen live" or "icelandic". If none does, falls back
+     * to the first tag that is not a nationality, decade or similar.
      */
-    private fun getFirstValidGenre(tags: List<String>): String {
-        // Filter out non-genre tags first
-        val genreTags = tags.filter { tag ->
-            val lowerTag = tag.lowercase()
-            // Skip ignored tags
-            if (ignoredTags.any { ignored -> lowerTag == ignored || lowerTag.contains(ignored) }) {
-                return@filter false
-            }
-            // Skip very short tags (likely not useful)
-            if (lowerTag.length < 3) {
-                return@filter false
-            }
-            true
+    private fun pickGenre(tags: List<String>): String {
+        tags.firstOrNull { GenreMapper.isKnown(it) }?.let {
+            return GenreMapper.displayName(it)
         }
         
-        Log.d(TAG, "Filtered tags: ${genreTags.take(5).joinToString()}")
-        
-        // Return the first valid tag, properly capitalized
-        if (genreTags.isNotEmpty()) {
-            return capitalizeGenre(genreTags.first())
+        val fallback = tags.firstOrNull { tag ->
+            val words = " ${tag.lowercase().trim()} "
+            // Whole words only: "uk" must not rule out "punk"
+            tag.trim().length >= 3 && ignoredTags.none { words.contains(" $it ") }
         }
         
-        return "Other"
-    }
-    
-    /**
-     * Capitalize genre name properly.
-     * Examples: "hip-hop" -> "Hip-Hop", "r&b" -> "R&B", "rock" -> "Rock"
-     */
-    private fun capitalizeGenre(genre: String): String {
-        val lower = genre.lowercase()
-        
-        // Special cases
-        return when {
-            lower == "r&b" || lower == "rnb" -> "R&B"
-            lower == "hip-hop" || lower == "hip hop" -> "Hip-Hop"
-            lower == "edm" -> "EDM"
-            lower == "j-pop" || lower == "jpop" -> "J-Pop"
-            lower == "k-pop" || lower == "kpop" -> "K-Pop"
-            lower == "lo-fi" || lower == "lofi" -> "Lo-Fi"
-            lower.contains("-") -> {
-                // Capitalize each part: "singer-songwriter" -> "Singer-Songwriter"
-                genre.split("-").joinToString("-") { part ->
-                    part.replaceFirstChar { it.uppercase() }
-                }
-            }
-            else -> genre.replaceFirstChar { it.uppercase() }
-        }
+        return fallback?.let { GenreMapper.displayName(it) } ?: GenreMapper.OTHER
     }
     
     /**
@@ -285,6 +328,16 @@ class GenreEnhancer(private val context: Context) {
         )
     }
     
+    /**
+     * Forget the artists saved as "no genre found", so the next scan looks them up again.
+     * Artists that already have a genre are kept.
+     */
+    suspend fun forgetUnknownArtists() = withContext(Dispatchers.IO) {
+        cacheDao.deleteByGenre(UNKNOWN_MARKER)
+        pausedUntil = 0L
+        failuresInARow = 0
+    }
+
     /**
      * Clear the entire cache.
      */

@@ -19,7 +19,9 @@ interface LastFmApi {
         @Query("method") method: String = "artist.getinfo",
         @Query("artist") artist: String,
         @Query("api_key") apiKey: String = API_KEY,
-        @Query("format") format: String = "json"
+        @Query("format") format: String = "json",
+        // Let Last.fm fix the spelling of the artist name
+        @Query("autocorrect") autocorrect: Int = 1
     ): Response<ArtistInfoResponse>
     
     companion object {

@@ -2,6 +2,7 @@ package com.localplayer.playback
 
 import android.content.ComponentName
 import android.content.Context
+import androidx.media3.common.C
 import androidx.media3.common.MediaItem
 import androidx.media3.common.Player
 import androidx.media3.session.MediaController
@@ -71,6 +72,12 @@ class PlaybackManager(private val context: Context) {
     fun seekTo(positionMs: Long) {
         controller?.seekTo(positionMs)
     }
+
+    /** Position in the playing track, in milliseconds. */
+    fun currentPosition(): Long = controller?.currentPosition ?: 0L
+
+    /** Length of the playing track in milliseconds, or 0 while the player does not know it. */
+    fun duration(): Long = controller?.duration?.takeIf { it != C.TIME_UNSET } ?: 0L
 
     fun next() {
         controller?.seekToNext()

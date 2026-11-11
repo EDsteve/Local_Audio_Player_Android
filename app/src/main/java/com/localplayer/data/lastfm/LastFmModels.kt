@@ -8,7 +8,14 @@ import com.google.gson.annotations.SerializedName
 
 data class ArtistInfoResponse(
     @SerializedName("artist")
-    val artist: ArtistInfo?
+    val artist: ArtistInfo?,
+
+    /** Set instead of [artist] when the call failed; Last.fm still answers HTTP 200 */
+    @SerializedName("error")
+    val error: Int? = null,
+
+    @SerializedName("message")
+    val message: String? = null
 )
 
 data class ArtistInfo(

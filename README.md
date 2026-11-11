@@ -35,6 +35,7 @@ A modern Android music player app that plays local audio files from user-selecte
 - **Last.fm API Integration** - Automatic genre detection using Last.fm's extensive music database
 - **Artist-based Genre Tagging** - Looks up artist genres for accurate categorization
 - **20 Genre Categories** - Tracks are organized into: Rock, Pop, Hip-Hop, Electronic, R&B, Jazz, Blues, Classical, Country, Folk, Latin, Reggae, Metal, Ambient, Soundtrack, Gospel, Children, Spoken Word, World, and Other
+- **Sub-genres** - Each category holds its sub-genres like folders: Rock contains Alternative Rock, Indie Rock, Punk and so on. Playing Rock plays all of them
 - **Smart Caching** - Genre lookups are cached locally (Room database) for instant subsequent scans
 - **Offline Support** - Works offline for previously scanned artists
 - **Refresh Button** - Re-scan genres with updated mappings when needed
@@ -90,7 +91,7 @@ These features are **not yet implemented** or have known issues:
 app/
 ├── data/
 │   ├── MusicRepository.kt      # Folder scanning and track grouping
-│   ├── GenreMapper.kt          # Genre classification (120+ mappings)
+│   ├── GenreMapper.kt          # Genre tree: sub-genre -> top genre
 │   ├── GenreEnhancer.kt        # Last.fm API + cache orchestration
 │   ├── ArtistParser.kt         # Extract artist from filename/path
 │   ├── PreferencesManager.kt   # Persistent folder storage
@@ -157,7 +158,7 @@ The app uses:
 
 The app automatically detects genres using the Last.fm API:
 - On first scan, each unique artist is looked up on Last.fm
-- The returned tags are mapped to one of 20 genre categories
+- The first tag that is a known genre is kept as the track's sub-genre (e.g. Indie Rock) and filed under one of 20 genre categories (Rock)
 - Results are cached locally for instant subsequent scans
 - If genres seem incorrect, use the refresh button to re-scan
 

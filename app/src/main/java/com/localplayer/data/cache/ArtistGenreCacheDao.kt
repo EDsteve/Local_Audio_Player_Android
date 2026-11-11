@@ -61,6 +61,13 @@ interface ArtistGenreCacheDao {
     suspend fun clearAll()
     
     /**
+     * Forget the artists saved with the given genre.
+     * Used to drop "no genre found" markers so those artists are looked up again.
+     */
+    @Query("DELETE FROM artist_genre_cache WHERE genre = :genre")
+    suspend fun deleteByGenre(genre: String)
+
+    /**
      * Clear entries older than a specified timestamp.
      * Useful for cache maintenance.
      */

@@ -5,6 +5,8 @@ import android.net.Uri
 import androidx.media3.common.Player
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
+import com.localplayer.data.ArtistParser
+import com.localplayer.data.GenreOverrides
 import com.localplayer.data.MusicRepository
 import com.localplayer.data.PreferencesManager
 import com.localplayer.data.TrackCache
@@ -23,6 +25,8 @@ data class PlayerUiState(
     val folders: List<Folder> = emptyList(),
     val rootFolder: Folder? = null, // Single root folder with subfolders + tracks
     val genres: List<GenreBucket> = emptyList(),
+    // Genres set by hand, keyed as in GenreOverrides
+    val manualGenres: Map<String, String> = emptyMap(),
     val selectedFolders: List<Uri> = emptyList(),
     val nowPlaying: Track? = null,
     val playingQueue: List<Track> = emptyList(),
@@ -35,6 +39,10 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
     private val playbackManager = PlaybackManager(application)
     private val preferencesManager = PreferencesManager(application)
     private val trackCache = TrackCache(application)
+    private val genreOverrides = GenreOverrides(application)
+
+    // The library with its automatic genres, before the ones set by hand are applied
+    private var libraryTracks: List<Track> = emptyList()
 
     private val _uiState = MutableStateFlow(PlayerUiState())
     val uiState: StateFlow<PlayerUiState> = _uiState.asStateFlow()
@@ -92,11 +100,7 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
             val cachedTracks = trackCache.loadTracks()
             if (cachedTracks != null) {
                 // Use cached tracks - no scanning needed
-                _uiState.value = _uiState.value.copy(
-                    tracks = cachedTracks,
-                    folders = repository.groupByFolder(cachedTracks),
-                    genres = repository.groupByGenre(cachedTracks)
-                )
+                showLibrary(cachedTracks)
             } else {
                 // No cache - need to scan
                 scanAndCacheLibrary()
@@ -135,12 +139,13 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
     }
     
     /**
-     * Clear genre cache and rescan library.
-     * Use this when genres are incorrectly categorized and user wants to refresh.
+     * Rescan the library and look up again the artists that have no genre yet.
+     * Genres already fetched from Last.fm are kept, so repeating this fills
+     * in the gaps instead of starting over.
      */
-    fun clearGenreCacheAndRescan() {
+    fun refreshGenres() {
         viewModelScope.launch {
-            repository.clearGenreCache()
+            repository.forgetMissingGenres()
             trackCache.clearCache()
             scanAndCacheLibrary()
         }
@@ -157,13 +162,53 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
             // Save to cache for next startup
             trackCache.saveTracks(tracks)
             
-            _uiState.value = _uiState.value.copy(
-                isLoading = false,
-                tracks = tracks,
-                folders = repository.groupByFolder(tracks),
-                genres = repository.groupByGenre(tracks)
-            )
+            showLibrary(tracks)
         }
+    }
+
+    /**
+     * Show these tracks as the library, with the genres set by hand applied
+     * on top of the automatic ones.
+     */
+    private fun showLibrary(tracks: List<Track>) {
+        libraryTracks = tracks
+        val manualGenres = genreOverrides.all()
+        val shown = tracks.map { track ->
+            GenreOverrides.manualGenre(manualGenres, track.id, track.artist)
+                ?.let { track.copy(genre = it) }
+                ?: track
+        }
+        _uiState.value = _uiState.value.copy(
+            isLoading = false,
+            tracks = shown,
+            folders = repository.groupByFolder(shown),
+            genres = repository.groupByGenre(shown),
+            manualGenres = manualGenres
+        )
+    }
+
+    /**
+     * Set a track's genre by hand, for that track only or for every track by its artist.
+     */
+    fun setGenre(track: Track, genre: String, wholeArtist: Boolean) {
+        if (wholeArtist) {
+            val artist = ArtistParser.normalizeArtistName(track.artist)
+            val artistTrackIds = libraryTracks
+                .filter { ArtistParser.normalizeArtistName(it.artist) == artist }
+                .map { it.id }
+            genreOverrides.setForArtist(track.artist, genre, artistTrackIds)
+        } else {
+            genreOverrides.setForTrack(track.id, genre)
+        }
+        showLibrary(libraryTracks)
+    }
+
+    /**
+     * Go back to the automatic genre for a track and its artist.
+     */
+    fun resetGenre(track: Track) {
+        genreOverrides.clear(track.id, track.artist)
+        showLibrary(libraryTracks)
     }
 
     fun playTrackList(tracks: List<Track>, startIndex: Int) {
@@ -218,6 +263,18 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
     fun toggleShuffle() {
         playbackManager.toggleShuffle()
     }
+
+    /** Position in the playing track, in milliseconds. */
+    fun playbackPositionMs(): Long = playbackManager.currentPosition()
+
+    /** Length of the playing track; from the file's metadata until the player knows it. */
+    fun playbackDurationMs(): Long =
+        playbackManager.duration().takeIf { it > 0L }
+            ?: _uiState.value.nowPlaying?.durationMs
+            ?: 0L
+
+    /** Jump to a position in the playing track. */
+    fun seekTo(positionMs: Long) = playbackManager.seekTo(positionMs)
 
     fun next() = playbackManager.next()
 
